@@ -1,26 +1,40 @@
 import streamlit as st
 import pickle
 import re
+from datetime import datetime
+import pandas as pd
 
-# Page configuration
+# ===============================
+# Page Configuration
+# ===============================
 st.set_page_config(
     page_title="News_ID Fake News Detector",
     page_icon="🛡️",
     layout="wide"
 )
 
-# Load YOUR News_ID models
+# ===============================
+# Load Models
+# ===============================
 @st.cache_resource
 def load_models():
-    model = pickle.load(open('News_ID_model.pkl', 'rb'))
-    vectorizer = pickle.load(open('News_ID_vectorizer.pkl', 'rb'))
+    model = pickle.load(open("News_ID_model.pkl", "rb"))
+    vectorizer = pickle.load(open("News_ID_vectorizer.pkl", "rb"))
     return model, vectorizer
 
-# Load models
 model, vectorizer = load_models()
 
+# ===============================
+# Session State (History)
+# ===============================
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# ===============================
 # Header
+# ===============================
 st.markdown("## 🛡️ News_ID Fake News Detector")
+
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("📊 Total Articles", "300,000")
@@ -31,69 +45,141 @@ with col3:
 
 st.markdown("---")
 
-# Input section
+# ===============================
+# Input Section
+# ===============================
 st.markdown("### 📝 Analyze News Article")
+
 col1, col2 = st.columns([3, 1])
 
 with col1:
     news_title = st.text_input(
         "News Title",
-        placeholder="Enter news headline...",
         value="Government to Shut Down Internet for 7 Days Starting Monday"
     )
+
 with col2:
     news_source = st.text_input(
-        "Source", 
-        placeholder="e.g., CNN, BBC",
+        "Source",
         value="DailyNationNow.com"
     )
 
 news_text = st.text_area(
     "Full News Text",
-    height=250,
-    placeholder="Paste complete article here...",
-    value="The central government has reportedly decided to shut down internet services across the country for seven days starting this Monday. According to anonymous sources, the decision was taken to 'control misinformation and maintain national security.' Citizens have been advised to withdraw cash immediately and complete all online transactions before Sunday night."
+    height=260,
+    value=(
+        "The central government has reportedly decided to shut down internet "
+        "services across the country for seven days starting this Monday. "
+        "According to anonymous sources, the decision was taken to control "
+        "misinformation and maintain national security."
+    )
 )
 
+# ===============================
 # Prediction
-col1, col2 = st.columns([4, 1])
-if col1.button("🔍 DETECT FAKE NEWS", type="primary", use_container_width=True):
-    if news_title or news_text:
-        # Combine inputs
-        full_text = f"{news_title} {news_source} {news_text}".strip()
-        
-        # Clean text (same as training)
-        cleaned = re.sub(r'[^a-zA-Z\s]', ' ', full_text.lower())
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        
-        # Predict
+# ===============================
+if st.button("🔍 DETECT FAKE NEWS", type="primary", use_container_width=True):
+
+    if news_title.strip() or news_text.strip():
+
+        full_text = f"{news_title} {news_source} {news_text}"
+
+        cleaned = re.sub(r"[^a-zA-Z\s]", " ", full_text.lower())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
         vec = vectorizer.transform([cleaned])
         prediction = model.predict(vec)[0]
-        probability = model.predict_proba(vec)[0]
-        
+        prob = model.predict_proba(vec)[0]
+
+        fake_prob = prob[1] * 100
+        real_prob = prob[0] * 100
+        confidence = max(fake_prob, real_prob)
+
+        label = "FAKE NEWS" if prediction == 1 else "REAL NEWS"
+
         st.markdown("---")
-        
         col_result, col_conf, col_prob = st.columns([2, 1, 1])
+
         with col_result:
             if prediction == 1:
                 st.error("❌ **FAKE NEWS**")
             else:
                 st.success("✅ **REAL NEWS**")
-        
-        with col_conf:
-            confidence = max(probability) * 100
-            st.metric("Confidence", f"{confidence:.1f}%")
-        
-        with col_prob:
-            st.info(f"Fake Prob: {probability[1]*100:.1f}%")
-    else:
-        st.warning("⚠️ Please enter news title or text!")
 
+        with col_conf:
+            if confidence >= 80:
+                st.success(f"🟢 Model Confidence: {confidence:.1f}%")
+            elif confidence >= 60:
+                st.warning(f"🟡 Model Confidence: {confidence:.1f}%")
+            else:
+                st.error(f"🔴 Model Confidence: {confidence:.1f}%")
+
+        with col_prob:
+            st.write(f"**Fake Probability:** {fake_prob:.1f}%")
+            st.write(f"**Real Probability:** {real_prob:.1f}%")
+
+        if confidence < 60:
+            st.warning(
+                "⚠️ Low confidence indicates ambiguous language; "
+                "the article may mix factual and sensational cues."
+            )
+
+        # ===============================
+        # Save to History
+        # ===============================
+        st.session_state.history.append({
+            "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Title": news_title,
+            "Source": news_source,
+            "Prediction": label,
+            "Confidence (%)": round(confidence, 1),
+            "Fake Probability (%)": round(fake_prob, 1),
+            "Real Probability (%)": round(real_prob, 1)
+        })
+
+    else:
+        st.warning("⚠️ Please enter a news title or article text!")
+
+# ===============================
+# History Section
+# ===============================
+st.markdown("---")
+st.markdown("### 📈 History of Analyzed Articles")
+
+if st.session_state.history:
+    df_history = pd.DataFrame(st.session_state.history)
+    st.dataframe(df_history, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        csv_data = df_history.to_csv(index=False)
+        st.download_button(
+            label="📤 Export History to CSV",
+            data=csv_data,
+            file_name=f"fake_news_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    with col2:
+        if st.button("🗑️ Clear History", use_container_width=True):
+            st.session_state.history = []
+            st.success("History cleared!")
+
+else:
+    st.info("No articles analyzed yet.")
+
+# ===============================
 # Footer
-st.markdown("""
-<hr>
-<div style='text-align: center; color: #666; font-size: 14px;'>
-    <b>Built by Laxmi Prasanna</b> | B.Tech CSE | Data Science Portfolio<br>
-    Trained on 300K News_ID dataset | Python • Scikit-learn • Streamlit
-</div>
-""", unsafe_allow_html=True)
+# ===============================
+st.markdown(
+    """
+    <hr>
+    <div style='text-align: center; color: #666; font-size: 14px;'>
+        <b>Built by Laxmi Prasanna</b> | B.Tech CSE | Data Science Portfolio<br>
+        Trained on 300K+ News Articles | Python • Scikit-learn • Streamlit
+    </div>
+    """,
+    unsafe_allow_html=True
+)
