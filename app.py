@@ -84,6 +84,7 @@ if st.button("🔍 DETECT FAKE NEWS", type="primary", use_container_width=True):
 
         full_text = f"{news_title} {news_source} {news_text}"
 
+        # Same preprocessing as training
         cleaned = re.sub(r"[^a-zA-Z\s]", " ", full_text.lower())
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
@@ -100,29 +101,45 @@ if st.button("🔍 DETECT FAKE NEWS", type="primary", use_container_width=True):
         st.markdown("---")
         col_result, col_conf, col_prob = st.columns([2, 1, 1])
 
+        # ===============================
+        # Result
+        # ===============================
         with col_result:
             if prediction == 1:
                 st.error("❌ **FAKE NEWS**")
             else:
                 st.success("✅ **REAL NEWS**")
 
+        # ===============================
+        # Auto-Colored Prediction Confidence
+        # ===============================
         with col_conf:
             if confidence >= 80:
-                st.success(f"🟢 Model Confidence: {confidence:.1f}%")
+                st.success(f"🟢 Prediction Confidence: {confidence:.1f}%")
             elif confidence >= 60:
-                st.warning(f"🟡 Model Confidence: {confidence:.1f}%")
+                st.warning(f"🟡 Prediction Confidence: {confidence:.1f}%")
             else:
-                st.error(f"🔴 Model Confidence: {confidence:.1f}%")
+                st.error(f"🔴 Prediction Confidence: {confidence:.1f}%")
 
+        # ===============================
+        # Probabilities
+        # ===============================
         with col_prob:
-            st.write(f"**Fake Probability:** {fake_prob:.1f}%")
-            st.write(f"**Real Probability:** {real_prob:.1f}%")
+            st.write(f"**Likelihood of Fake News:** {fake_prob:.1f}%")
+            st.write(f"**Likelihood of Real News:** {real_prob:.1f}%")
 
+        # ===============================
+        # Borderline Warning
+        # ===============================
         if confidence < 60:
             st.warning(
-                "⚠️ Low confidence indicates ambiguous language; "
-                "the article may mix factual and sensational cues."
+                "⚠️ Borderline prediction — the article shows a mix of "
+                "factual language and sensational cues."
             )
+
+        st.caption(
+            "🔍 This prediction is probabilistic and should not be treated as definitive proof."
+        )
 
         # ===============================
         # Save to History
@@ -132,7 +149,7 @@ if st.button("🔍 DETECT FAKE NEWS", type="primary", use_container_width=True):
             "Title": news_title,
             "Source": news_source,
             "Prediction": label,
-            "Confidence (%)": round(confidence, 1),
+            "Prediction Confidence (%)": round(confidence, 1),
             "Fake Probability (%)": round(fake_prob, 1),
             "Real Probability (%)": round(real_prob, 1)
         })
